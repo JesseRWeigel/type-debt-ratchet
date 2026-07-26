@@ -82,6 +82,18 @@ similarity and is the only real evidence available. Outside a git repository not
 confirms a rename, so a moved file reads as new debt and you run `--update-baseline` once,
 which is the safe direction to fail.
 
+## Message collapsing is now tested end to end
+
+The headline claim is that the baseline survives message churn, because quoted type names and
+numbers are replaced with placeholders before hashing. That was unit-tested only. Every fixture
+differed by error *code*, so `file + code` alone satisfied every behavioral assertion and the
+normalization could have been a no-op without a single check noticing.
+
+`test/fixtures/collapse-base` and `collapse-changed` differ only in the quoted type,
+`'string'` against `'boolean'`, and in line number. Loose mode must treat them as the same
+debt and exact mode must not. Both directions are asserted, so neither mode can silently
+become the other.
+
 ## Status
 
 Verified 2026-07-26.
@@ -100,11 +112,11 @@ $ bash scripts/verify.sh
   ok    dist/action.js loads under node
   ok    every action.yml input is read by src/action.ts
 
-18 passed, 0 failed
+20 passed, 0 failed
 VERIFY OK
 ```
 
-95 unit tests plus 18 behavioral checks against real fixture projects with real `tsc` errors.
+95 unit tests plus 20 behavioral checks against real fixture projects with real `tsc` errors.
 Several checks are negative controls: the renamed fixture is asserted to **fail** with
 `--no-rename-detection`, so the passing case proves rename handling is doing the work rather
 than the fixture simply having no errors.
@@ -120,9 +132,9 @@ TypeScript type stripping. The built `dist/` runs on Node 20.11 or newer with no
   its entrypoint exists, is tracked in git, loads under node, and that every declared input
   is read by the code, which is considerably more than nothing and still is not the same as
   a green run on a real pull request.
-- `--signature-mode exact` has unit coverage but is never exercised end to end.
-- Loose-mode message collapsing has no end-to-end fixture. The fixtures differ by error
-  code, so `file + code` alone satisfies the behavioral assertions.
+- The GitHub Action entrypoint is asserted to exist, be tracked, load under node, and read
+  every input it declares, which is more than nothing and still not a green run on a real
+  pull request.
 
 ## License
 

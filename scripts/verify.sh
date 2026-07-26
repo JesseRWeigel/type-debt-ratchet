@@ -12,6 +12,7 @@ set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 CLI="node --experimental-strip-types src/cli.ts"
+TSC_SELF="$PWD/node_modules/.bin/tsc --noEmit --pretty false"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -153,7 +154,27 @@ done
                   || bad "inputs declared but never read:$missing"
 
 echo
-echo "7. stale detection"
+echo "7. loose-mode message collapsing, exercised end to end"
+# The headline claim is that the baseline survives message churn because quoted type names
+# and numbers are replaced with placeholders. Until now that was unit-tested only: every
+# fixture differed by error CODE, so file+code alone satisfied every behavioural assertion
+# and the normalisation could have been a no-op without any check noticing.
+# collapse-base and collapse-changed differ ONLY in the quoted type ('string' vs 'boolean')
+# and in line number. Loose must treat them as the same debt; exact must not.
+CB="$TMP/collapse.json"
+$CLI --cwd test/fixtures/collapse-base --baseline "$CB" --update-baseline --command "$TSC_SELF" >/dev/null 2>&1
+out=$($CLI --cwd test/fixtures/collapse-changed --baseline "$CB" --command "$TSC_SELF" 2>&1); rc=$?
+[ "$rc" -eq 0 ] && ok "loose collapses a changed quoted type (exit 0)" \
+                || { bad "loose should exit 0, got $rc"; printf '%s\n' "$out" | sed 's/^/        /' | head -5; }
+
+CE="$TMP/collapse-exact.json"
+$CLI --cwd test/fixtures/collapse-base --baseline "$CE" --update-baseline --signature-mode exact --command "$TSC_SELF" >/dev/null 2>&1
+out=$($CLI --cwd test/fixtures/collapse-changed --baseline "$CE" --signature-mode exact --command "$TSC_SELF" 2>&1); rc=$?
+[ "$rc" -eq 1 ] && ok "exact mode treats the changed type as new debt (exit 1)" \
+                || { bad "exact should exit 1, got $rc"; printf '%s\n' "$out" | sed 's/^/        /' | head -5; }
+
+echo
+echo "8. stale detection"
 expect "--fail-on-stale flags a shrunk baseline" 1 fixed-only --fail-on-stale
 
 echo
