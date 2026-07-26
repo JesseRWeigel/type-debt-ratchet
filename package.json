@@ -1,0 +1,43 @@
+{
+  "name": "type-debt-ratchet",
+  "version": "1.0.0",
+  "description": "Fail CI only on NEW tsc errors. A type-debt baseline keyed by normalized error signature, not line number.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "type-debt-ratchet": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20.11"
+  },
+  "files": [
+    "dist",
+    "action.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/*.test.ts",
+    "e2e": "bash scripts/e2e.sh",
+    "verify": "bash scripts/verify.sh"
+  },
+  "keywords": [
+    "typescript",
+    "tsc",
+    "github-action",
+    "technical-debt",
+    "ratchet",
+    "strict-mode",
+    "ci"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JesseRWeigel/type-debt-ratchet.git"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,74 @@
+name: Type Debt Ratchet
+description: Run tsc and fail only on type errors that are not in the committed baseline.
+author: Jesse Weigel
+
+branding:
+  icon: trending-down
+  color: blue
+
+inputs:
+  baseline:
+    description: Path to the committed baseline file, relative to working-directory.
+    required: false
+    default: type-debt.json
+  tsc-command:
+    description: >-
+      Shell command that prints tsc diagnostics. Must produce plain output, so keep
+      --pretty false. Swap in vue-tsc, `pnpm exec tsc -b`, or anything else that prints
+      the same format.
+    required: false
+    default: npx tsc --noEmit --pretty false
+  working-directory:
+    description: Directory to run the type check in. Paths in the baseline are relative to it.
+    required: false
+    default: "."
+  signature-mode:
+    description: >-
+      loose (default) collapses quoted type names and numbers so a baseline survives
+      refactors. exact keys on the verbatim message.
+    required: false
+    default: loose
+  update-baseline:
+    description: Rewrite the baseline from this run and succeed. For a scheduled or manual job.
+    required: false
+    default: "false"
+  auto-shrink:
+    description: >-
+      Record fixed errors in the baseline automatically. Never absorbs new errors, so the
+      ratchet still fails on regressions. Pair it with a commit-back step.
+    required: false
+    default: "false"
+  fail-on-stale:
+    description: Also fail when the baseline lists errors that no longer occur.
+    required: false
+    default: "false"
+  rename-detection:
+    description: Carry a file's baseline errors over when it is moved without being edited.
+    required: false
+    default: "true"
+  comment:
+    description: Post or update a PR comment with the debt delta.
+    required: false
+    default: "true"
+  github-token:
+    description: Token used to post the PR comment. Needs pull-requests: write.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  new-errors:
+    description: Number of type errors that are not in the baseline.
+  fixed-errors:
+    description: Number of baseline errors that no longer occur.
+  total-errors:
+    description: Total type errors in this run.
+  baseline-errors:
+    description: Total type errors recorded in the baseline.
+  baseline-written:
+    description: "true when this run modified the baseline file on disk."
+  summary:
+    description: One-line verdict, suitable for a status message.
+
+runs:
+  using: node20
+  main: dist/action.js

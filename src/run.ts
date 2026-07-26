@@ -1,0 +1,137 @@
+/**
+ * The ratchet itself, with no opinion about where it was invoked from.
+ *
+ * `src/cli.ts` and `src/action.ts` are both thin shells around `runRatchet`. Keeping the
+ * decision logic here is what lets the end-to-end tests exercise the same code path CI runs.
+ */
+
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { buildBaseline, emptyBaseline, readBaseline, writeBaseline } from "./baseline.ts";
+import { diffAgainstBaseline, shrinkBaseline } from "./diff.ts";
+import { countSignatures, toSignature } from "./signature.ts";
+import { runCommand, runTypeCheck } from "./tsc.ts";
+import type { Baseline, RatchetDiff, SignatureMode } from "./types.ts";
+
+/** Exit codes. Distinguishing 1 from 2 lets a workflow tell debt from breakage. */
+export const EXIT_OK = 0;
+export const EXIT_NEW_DEBT = 1;
+export const EXIT_USAGE = 2;
+
+export interface RatchetOptions {
+  /** Directory the type-check command runs in. Also the root paths are made relative to. */
+  readonly cwd: string;
+  /** Path to the baseline file, absolute or relative to `cwd`. */
+  readonly baselinePath: string;
+  /** Shell command that prints tsc diagnostics. */
+  readonly command: string;
+  readonly signatureMode: SignatureMode;
+  /** Rewrite the baseline from this run and exit 0. */
+  readonly updateBaseline: boolean;
+  /** Record fixed errors in the baseline automatically. Never absorbs new errors. */
+  readonly autoShrink: boolean;
+  /** Fail when the baseline still lists errors that no longer occur. */
+  readonly failOnStale: boolean;
+  /** Turn off rename matching, for a codebase where it misfires. */
+  readonly detectRenames: boolean;
+  readonly runner?: (command: string, cwd: string) => Promise<{ output: string; exitCode: number }>;
+}
+
+export interface RatchetResult {
+  readonly exitCode: number;
+  readonly diff: RatchetDiff;
+  /** The baseline as it stands after the run, whether or not it was written. */
+  readonly baseline: Baseline;
+  /** True when this run changed the baseline file on disk. */
+  readonly baselineWritten: boolean;
+  /** Human-readable notes about what the run decided, for the CLI to print. */
+  readonly notes: readonly string[];
+}
+
+export const DEFAULT_OPTIONS = {
+  baselinePath: "type-debt.json",
+  command: "npx tsc --noEmit --pretty false",
+  signatureMode: "loose",
+} as const satisfies Partial<RatchetOptions>;
+
+/**
+ * Run the type check, compare it to the baseline, and decide the exit code.
+ *
+ * Order matters. The baseline is read before the check so a malformed file fails fast
+ * rather than after a slow compile, and it is written only after a successful parse so a
+ * crashed tsc can never blank out a project's recorded debt.
+ */
+export async function runRatchet(options: RatchetOptions): Promise<RatchetResult> {
+  const cwd = path.resolve(options.cwd);
+  const baselinePath = path.resolve(cwd, options.baselinePath);
+  const notes: string[] = [];
+
+  const existing = await readBaseline(baselinePath);
+
+  if (existing !== null && existing.signatureMode !== options.signatureMode && !options.updateBaseline) {
+    throw new Error(
+      `${options.baselinePath} was written in "${existing.signatureMode}" signature mode but this run ` +
+        `uses "${options.signatureMode}". Every signature would look new. Re-run with --update-baseline ` +
+        `or switch back with --signature-mode ${existing.signatureMode}.`,
+    );
+  }
+
+  const { diagnostics } = await runTypeCheck(options.command, cwd, options.runner ?? runCommand);
+  const errors = diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+  const counts = countSignatures(errors.map((error) => toSignature(error, cwd, options.signatureMode)));
+
+  if (options.updateBaseline) {
+    const next = buildBaseline(counts, options.signatureMode);
+    const written = await writeBaseline(baselinePath, next);
+    const before = existing?.totalErrors ?? 0;
+    notes.push(
+      written
+        ? `Wrote ${options.baselinePath}: ${before} -> ${next.totalErrors} recorded errors.`
+        : `${options.baselinePath} already matched this run, left unchanged.`,
+    );
+    const diff = diffAgainstBaseline(next, counts, {
+      fileExists: (relative) => existsSync(path.resolve(cwd, relative)),
+      detectRenames: options.detectRenames,
+    });
+    return { exitCode: EXIT_OK, diff, baseline: next, baselineWritten: written, notes };
+  }
+
+  if (existing === null) {
+    throw new Error(
+      `No baseline at ${baselinePath}.\n` +
+        `Create one from the current state with:\n` +
+        `  npx type-debt-ratchet --update-baseline --baseline ${options.baselinePath}\n` +
+        `Commit the result, then this command will fail only on errors added after it.`,
+    );
+  }
+
+  const diff = diffAgainstBaseline(existing, counts, {
+    fileExists: (relative) => existsSync(path.resolve(cwd, relative)),
+    detectRenames: options.detectRenames,
+  });
+
+  let baseline = existing;
+  let baselineWritten = false;
+  if (options.autoShrink && diff.fixedErrorCount > 0) {
+    baseline = shrinkBaseline(existing, diff);
+    baselineWritten = await writeBaseline(baselinePath, baseline);
+    notes.push(
+      `Auto-shrink recorded ${diff.fixedErrorCount} fixed error${diff.fixedErrorCount === 1 ? "" : "s"} ` +
+        `in ${options.baselinePath}. Commit the change so the fixes cannot regress.`,
+    );
+  }
+
+  if (diff.newErrorCount > 0) {
+    return { exitCode: EXIT_NEW_DEBT, diff, baseline, baselineWritten, notes };
+  }
+  if (options.failOnStale && diff.stale && !baselineWritten) {
+    notes.push(
+      `--fail-on-stale is set and ${options.baselinePath} lists ${diff.fixedErrorCount} error(s) that no longer occur.`,
+    );
+    return { exitCode: EXIT_NEW_DEBT, diff, baseline, baselineWritten, notes };
+  }
+  return { exitCode: EXIT_OK, diff, baseline, baselineWritten, notes };
+}
+
+/** An empty baseline for a project that starts clean. Exposed for tests and docs. */
+export { emptyBaseline };
