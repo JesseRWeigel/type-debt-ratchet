@@ -83,6 +83,9 @@ npx type-debt-ratchet                       # fails only on errors added since</
 <p>Both were found by an independent reviewer attacking the tool rather than testing it, and both are the kind of bug that makes a CI gate quietly stop guarding while still reporting green. Each now has a check in <code>scripts/verify.sh</code> asserting both directions.</p>
 <p><strong>A checker that runs but checks nothing.</strong> A wrong <code>tsconfig</code> path, an exclude glob that stops matching, or <code>tsc -b</code> with a warm <code>.tsbuildinfo</code> restored from a CI cache all exit 0 and print nothing. That is indistinguishable from a completed cleanup: zero diagnostics, every baseline entry &quot;fixed&quot;. The tool used to report <code>PASS, 4 type errors fixed</code>. It now exits 2 when a non-empty baseline meets zero parsed diagnostics, because a total wipeout is far more often a broken command than finished work. <code>--allow-empty-result</code> opts in.</p>
 <p><strong>A rename that never happened.</strong> Rename detection used to pair a vanished file with an appeared file whenever their error fingerprints matched. A fingerprint is only <code>(code, normalized message, count)</code>, so in loose mode &quot;one TS2345&quot; is byte-identical across every unrelated file in a codebase, and any deletion paired with any addition. A pull request that deleted <code>legacy.ts</code> and added an unrelated <code>feature.ts</code> carrying a brand new <code>TS2345</code> was reported as a rename, and the new error was absorbed. The gate said PASS while letting new debt through. Renames are now confirmed by git, which decides by content similarity and is the only real evidence available. Outside a git repository nothing confirms a rename, so a moved file reads as new debt and you run <code>--update-baseline</code> once, which is the safe direction to fail.</p>
+<h2>Message collapsing is now tested end to end</h2>
+<p>The headline claim is that the baseline survives message churn, because quoted type names and numbers are replaced with placeholders before hashing. That was unit-tested only. Every fixture differed by error *code*, so <code>file + code</code> alone satisfied every behavioral assertion and the normalization could have been a no-op without a single check noticing.</p>
+<p><code>test/fixtures/collapse-base</code> and <code>collapse-changed</code> differ only in the quoted type, <code>&#x27;string&#x27;</code> against <code>&#x27;boolean&#x27;</code>, and in line number. Loose mode must treat them as the same debt and exact mode must not. Both directions are asserted, so neither mode can silently become the other.</p>
 <h2>Status</h2>
 <p>Verified 2026-07-26.</p>
 <pre><code>$ bash scripts/verify.sh
@@ -98,16 +101,16 @@ npx type-debt-ratchet                       # fails only on errors added since</
   ok    dist/action.js loads under node
   ok    every action.yml input is read by src/action.ts
 
-18 passed, 0 failed
+20 passed, 0 failed
 VERIFY OK</code></pre>
-<p>95 unit tests plus 18 behavioral checks against real fixture projects with real <code>tsc</code> errors. Several checks are negative controls: the renamed fixture is asserted to <strong>fail</strong> with <code>--no-rename-detection</code>, so the passing case proves rename handling is doing the work rather than the fixture simply having no errors.</p>
+<p>95 unit tests plus 20 behavioral checks against real fixture projects with real <code>tsc</code> errors. Several checks are negative controls: the renamed fixture is asserted to <strong>fail</strong> with <code>--no-rename-detection</code>, so the passing case proves rename handling is doing the work rather than the fixture simply having no errors.</p>
 <h2>Requirements</h2>
 <p>Node 22.6 or newer to run from source, because the test and verify scripts rely on TypeScript type stripping. The built <code>dist/</code> runs on Node 20.11 or newer with no flags.</p>
 <h2>Known gaps</h2>
 <ul><li>The Action has never executed in a real GitHub CI run. <code>scripts/verify.sh</code> asserts that</li></ul>
 <p>  its entrypoint exists, is tracked in git, loads under node, and that every declared input   is read by the code, which is considerably more than nothing and still is not the same as   a green run on a real pull request.</p>
-<ul><li><code>--signature-mode exact</code> has unit coverage but is never exercised end to end.</li><li>Loose-mode message collapsing has no end-to-end fixture. The fixtures differ by error</li></ul>
-<p>  code, so <code>file + code</code> alone satisfies the behavioral assertions.</p>
+<ul><li>The GitHub Action entrypoint is asserted to exist, be tracked, load under node, and read</li></ul>
+<p>  every input it declares, which is more than nothing and still not a green run on a real   pull request.</p>
 <footer>
   <p>Part of <a href="https://github.com/JesseRWeigel/722-things-to-build">722 things to
   build</a>, a catalog of scoped projects. Built and verified by an agent fleet; every
