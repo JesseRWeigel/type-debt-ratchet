@@ -62,6 +62,7 @@ font-size:14px;color:var(--ink3)}
 </header>
 <p>Fail CI only on type errors you just added, never on the ones you inherited.</p>
 <p>A team migrating off <code>strict: false</code> has thousands of existing <code>tsc</code> errors and no way to turn the compiler on without a big-bang fix. This records the errors you already have and fails the build only when the set grows. Debt can go down and never up.</p>
+<p><strong><a href="https://jesserweigel.github.io/type-debt-ratchet/">Read this on the web</a></strong></p>
 <h2>How it decides</h2>
 <p>The baseline is keyed by <strong>normalized error signature</strong>, not by line number.</p>
 <pre><code>file path + error code + message shape with identifiers, quoted types and numbers replaced</code></pre>

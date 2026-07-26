@@ -6,6 +6,8 @@ A team migrating off `strict: false` has thousands of existing `tsc` errors and 
 turn the compiler on without a big-bang fix. This records the errors you already have and
 fails the build only when the set grows. Debt can go down and never up.
 
+**[Read this on the web](https://jesserweigel.github.io/type-debt-ratchet/)**
+
 ## How it decides
 
 The baseline is keyed by **normalized error signature**, not by line number.
