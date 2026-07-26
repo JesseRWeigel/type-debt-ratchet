@@ -73,7 +73,16 @@ expect "renaming a file is not new debt" 0 renamed
 expect "renamed file IS new debt with detection off" 1 renamed --no-rename-detection
 
 echo
-echo "4. stale detection"
+echo "4. a checker that silently checks nothing must not read as a clean pass"
+# A wrong tsconfig, a bad exclude glob, or a wrapper that exits 0 without running tsc all
+# produce zero diagnostics, which is indistinguishable from a completed cleanup unless the
+# tool treats it as suspicious. A CI gate that passes when the checker is broken is worse
+# than no gate, so this is asserted explicitly rather than left to judgement.
+expect "an empty checker run against a real baseline is refused" 2 base --command "true"
+expect "--allow-empty-result accepts it deliberately" 0 base --command "true" --allow-empty-result
+
+echo
+echo "5. stale detection"
 expect "--fail-on-stale flags a shrunk baseline" 1 fixed-only --fail-on-stale
 
 echo

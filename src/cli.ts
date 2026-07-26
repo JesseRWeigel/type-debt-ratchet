@@ -24,6 +24,8 @@ Options:
   --auto-shrink            Record fixed errors in the baseline. Never absorbs new ones.
   --fail-on-stale          Also fail when the baseline lists errors that no longer occur
   --no-rename-detection    Treat a moved file's errors as new debt
+  --allow-empty-result     Accept a checker run that produced zero diagnostics
+                           against a non-empty baseline (default: treat as broken)
   --format <fmt>           text (default), json, or markdown
   -h, --help               Show this message
 
@@ -58,6 +60,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   let autoShrink = false;
   let failOnStale = false;
   let detectRenames = true;
+  let allowEmptyResult = false;
   let format: "text" | "json" | "markdown" = "text";
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -102,6 +105,9 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       case "--fail-on-stale":
         failOnStale = true;
         break;
+      case "--allow-empty-result":
+        allowEmptyResult = true;
+        break;
       case "--no-rename-detection":
         detectRenames = false;
         break;
@@ -124,6 +130,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       autoShrink,
       failOnStale,
       detectRenames,
+      allowEmptyResult,
     },
     format,
   };
