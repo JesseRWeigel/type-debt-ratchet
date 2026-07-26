@@ -8,7 +8,7 @@
     "type-debt-ratchet": "dist/cli.js"
   },
   "engines": {
-    "node": ">=20.11"
+    "node": ">=22.6"
   },
   "files": [
     "dist",
@@ -20,7 +20,6 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test test/*.test.ts",
-    "e2e": "bash scripts/e2e.sh",
     "verify": "bash scripts/verify.sh"
   },
   "keywords": [

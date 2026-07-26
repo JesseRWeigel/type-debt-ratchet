@@ -32,6 +32,7 @@ test("an unchanged run produces no debt in either direction", () => {
   const baseline = baselineFrom([...TWO_2322, ...ONE_2345]);
   const diff = diffAgainstBaseline(baseline, counts([...TWO_2322, ...ONE_2345]), {
     fileExists: allFiles,
+    confirmRename: () => true,
   });
   assert.equal(diff.newErrorCount, 0);
   assert.equal(diff.fixedErrorCount, 0);
@@ -45,7 +46,7 @@ test("line numbers moving is not new debt", () => {
     "src/a.ts(400,14): error TS2322: Type 'string' is not assignable to type 'number'.",
     "src/a.ts(401,14): error TS2322: Type 'boolean' is not assignable to type 'number'.",
   ];
-  const diff = diffAgainstBaseline(baseline, counts(moved), { fileExists: allFiles });
+  const diff = diffAgainstBaseline(baseline, counts(moved), { fileExists: allFiles, confirmRename: () => true });
   assert.equal(diff.newErrorCount, 0);
   assert.equal(diff.fixedErrorCount, 0);
 });
@@ -55,7 +56,7 @@ test("a brand new error in a baselined file is new debt", () => {
   const diff = diffAgainstBaseline(
     baseline,
     counts([...TWO_2322, "src/a.ts(9,1): error TS2554: Expected 1 arguments, but got 2."]),
-    { fileExists: allFiles },
+    { fileExists: allFiles, confirmRename: () => true },
   );
   assert.equal(diff.newErrorCount, 1);
   assert.equal(diff.added.length, 1);
@@ -70,7 +71,7 @@ test("more of the same error in one file is new debt, which is the point of coun
     "src/a.ts(6,14): error TS2322: Type 'null' is not assignable to type 'number'.",
     "src/a.ts(7,14): error TS2322: Type 'undefined' is not assignable to type 'number'.",
   ];
-  const diff = diffAgainstBaseline(baseline, counts(worse), { fileExists: allFiles });
+  const diff = diffAgainstBaseline(baseline, counts(worse), { fileExists: allFiles, confirmRename: () => true });
   assert.equal(diff.newErrorCount, 2);
   assert.equal(diff.added[0]?.baselineCount, 2);
   assert.equal(diff.added[0]?.currentCount, 4);
@@ -79,7 +80,7 @@ test("more of the same error in one file is new debt, which is the point of coun
 
 test("fewer of the same error is paid-down debt and does not fail", () => {
   const baseline = baselineFrom(TWO_2322);
-  const diff = diffAgainstBaseline(baseline, counts([TWO_2322[0] as string]), { fileExists: allFiles });
+  const diff = diffAgainstBaseline(baseline, counts([TWO_2322[0] as string]), { fileExists: allFiles, confirmRename: () => true });
   assert.equal(diff.newErrorCount, 0);
   assert.equal(diff.fixedErrorCount, 1);
   assert.equal(diff.stale, true);
@@ -87,7 +88,7 @@ test("fewer of the same error is paid-down debt and does not fail", () => {
 
 test("an entirely fixed file leaves the baseline stale but passing", () => {
   const baseline = baselineFrom([...TWO_2322, ...ONE_2345]);
-  const diff = diffAgainstBaseline(baseline, counts(TWO_2322), { fileExists: allFiles });
+  const diff = diffAgainstBaseline(baseline, counts(TWO_2322), { fileExists: allFiles, confirmRename: () => true });
   assert.equal(diff.newErrorCount, 0);
   assert.equal(diff.fixedErrorCount, 1);
   assert.equal(diff.fixed[0]?.file, "src/b.ts");
@@ -105,7 +106,7 @@ test("one fix and one addition reports both, and still fails", () => {
     ...ONE_2345,
     "src/b.ts(8,40): error TS2554: Expected 1 arguments, but got 2.",
   ];
-  const diff = diffAgainstBaseline(baseline, counts(after), { fileExists: allFiles });
+  const diff = diffAgainstBaseline(baseline, counts(after), { fileExists: allFiles, confirmRename: () => true });
   assert.equal(diff.newErrorCount, 1);
   assert.equal(diff.fixedErrorCount, 1);
   assert.equal(diff.added[0]?.code, "TS2554");
@@ -120,6 +121,7 @@ test("a renamed file carries its debt over instead of reading as new", () => {
   ];
   const diff = diffAgainstBaseline(baseline, counts(moved), {
     fileExists: (file) => file !== "src/b.ts",
+    confirmRename: () => true,
   });
   assert.deepEqual(diff.renames, [{ from: "src/b.ts", to: "src/lib/b.ts", errors: 1 }]);
   assert.equal(diff.newErrorCount, 0);
@@ -132,7 +134,7 @@ test("rename matching is refused when the old file is still on disk", () => {
     ...TWO_2322,
     "src/lib/b.ts(7,32): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.",
   ];
-  const diff = diffAgainstBaseline(baseline, counts(moved), { fileExists: allFiles });
+  const diff = diffAgainstBaseline(baseline, counts(moved), { fileExists: allFiles, confirmRename: () => true });
   assert.deepEqual(diff.renames, []);
   assert.equal(diff.newErrorCount, 1);
   assert.equal(diff.fixedErrorCount, 1);
@@ -167,7 +169,7 @@ test("a new file whose errors match nothing is not mistaken for a rename", () =>
     ...TWO_2322,
     "src/c.ts(1,1): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.",
   ];
-  const diff = diffAgainstBaseline(baseline, counts(withNewFile), { fileExists: allFiles });
+  const diff = diffAgainstBaseline(baseline, counts(withNewFile), { fileExists: allFiles, confirmRename: () => true });
   assert.deepEqual(diff.renames, []);
   assert.equal(diff.newErrorCount, 1);
 });
@@ -181,8 +183,8 @@ test("two files renamed with identical fingerprints pair deterministically", () 
     "src/p.ts(1,1): error TS2322: Type 'string' is not assignable to type 'number'.",
     "src/q.ts(1,1): error TS2322: Type 'string' is not assignable to type 'number'.",
   ]);
-  const first = detectRenames(baseline, moved, noFiles);
-  const second = detectRenames(baseline, moved, noFiles);
+  const first = detectRenames(baseline, moved, noFiles, () => true);
+  const second = detectRenames(baseline, moved, noFiles, () => true);
   assert.deepEqual(first, second);
   assert.deepEqual(
     first.map((rename) => `${rename.from}->${rename.to}`),
@@ -213,7 +215,7 @@ test("shrinkBaseline banks fixes without absorbing new errors", () => {
     TWO_2322[0] as string,
     "src/a.ts(9,1): error TS2554: Expected 1 arguments, but got 2.",
   ]);
-  const diff = diffAgainstBaseline(baseline, after, { fileExists: allFiles });
+  const diff = diffAgainstBaseline(baseline, after, { fileExists: allFiles, confirmRename: () => true });
   const shrunk = shrinkBaseline(baseline, diff);
 
   assert.equal(shrunk.totalErrors, 1, "only the surviving TS2322 stays");
@@ -234,10 +236,67 @@ test("shrinkBaseline follows a rename before shrinking", () => {
     TWO_2322[0] as string,
     "src/lib/b.ts(7,32): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.",
   ]);
-  const diff = diffAgainstBaseline(baseline, moved, { fileExists: (file) => file !== "src/b.ts" });
+  const diff = diffAgainstBaseline(baseline, moved, {
+    fileExists: (file) => file !== "src/b.ts",
+    confirmRename: () => true,
+  });
   const shrunk = shrinkBaseline(baseline, diff);
   assert.deepEqual(
     shrunk.entries.map((entry) => `${entry.file} ${entry.count}`),
     ["src/a.ts 1", "src/lib/b.ts 1"],
   );
+});
+
+test("an unrelated new file is NOT absorbed as a rename without confirmation", () => {
+  // The defect this guards: the fingerprint is only (code, normalized message, count),
+  // so in loose mode "one TS2345" is identical across every unrelated file. Deleting one
+  // file and adding another that happens to carry the same error shape was read as a
+  // rename, and the new file's genuinely new error was absorbed. The gate said PASS while
+  // letting new debt through, which is the exact failure a ratchet exists to prevent.
+  const baseline = baselineFrom([
+    "src/a.ts(2,32): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.",
+    "src/legacy.ts(2,32): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.",
+  ]);
+  // legacy.ts deleted, an unrelated feature.ts added carrying a brand new error of the
+  // same shape. Nothing about this is a rename.
+  const after = counts([
+    "src/a.ts(2,32): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.",
+    "src/feature.ts(3,24): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.",
+  ]);
+  const gone = (file: string) => file !== "src/legacy.ts";
+
+  const unconfirmed = diffAgainstBaseline(baseline, after, { fileExists: gone });
+  assert.deepEqual(unconfirmed.renames, [], "an unconfirmed pair must not be called a rename");
+  assert.equal(unconfirmed.newErrorCount, 1, "the new file's error must be reported as new debt");
+
+  // And the confirmer is genuinely consulted rather than ignored: when something does
+  // attest to the pair, the old behavior is available deliberately.
+  const confirmed = diffAgainstBaseline(baseline, after, {
+    fileExists: gone,
+    confirmRename: (from, to) => from === "src/legacy.ts" && to === "src/feature.ts",
+  });
+  assert.equal(confirmed.renames.length, 1);
+  assert.equal(confirmed.newErrorCount, 0);
+});
+
+test("the confirmer decides per pair, not globally", () => {
+  const baseline = baselineFrom([
+    "src/x.ts(1,1): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.",
+    "src/y.ts(1,1): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.",
+  ]);
+  const after = counts([
+    "src/moved-x.ts(1,1): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.",
+    "src/brand-new.ts(1,1): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.",
+  ]);
+  const diff = diffAgainstBaseline(baseline, after, {
+    fileExists: (file) => file !== "src/x.ts" && file !== "src/y.ts",
+    // Only x really moved. y was deleted and brand-new.ts is genuinely new.
+    confirmRename: (from, to) => from === "src/x.ts" && to === "src/moved-x.ts",
+  });
+  assert.deepEqual(
+    diff.renames.map((r) => `${r.from}->${r.to}`),
+    ["src/x.ts->src/moved-x.ts"],
+    "only the confirmed pair may be treated as a rename",
+  );
+  assert.equal(diff.newErrorCount, 1, "brand-new.ts still carries new debt");
 });

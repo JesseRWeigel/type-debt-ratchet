@@ -67,6 +67,19 @@ export function detectRenames(
   baseline: Baseline,
   current: SignatureCounts,
   fileExists: FileExists,
+  /**
+   * Positive evidence that `from` really became `to`. Defaults to refusing every pair.
+   *
+   * The fingerprint below only nominates candidates. It cannot confirm them, because in
+   * loose signature mode the fingerprint of "one TS2345" is identical across every
+   * unrelated file in a codebase, so any deletion pairs with any addition. Accepting a
+   * pair on that basis absorbs a genuinely new file's genuinely new errors into the
+   * baseline and reports PASS, which is precisely the failure a ratchet exists to
+   * prevent. The default is therefore to confirm nothing; `src/run.ts` supplies a
+   * git-backed confirmer, and callers can pass `() => true` to opt into the old
+   * fingerprint-only behavior explicitly.
+   */
+  confirm: (from: string, to: string) => boolean = () => false,
 ): DetectedRename[] {
   const baselineByFile = groupByFile(baseline.entries);
   const currentRows = [...current.values()].map(({ signature, count }) => ({
@@ -97,7 +110,13 @@ export function detectRenames(
   for (const from of vanished) {
     const rows = baselineByFile.get(from) ?? [];
     const candidates = appearedByFingerprint.get(fingerprint(rows));
-    const to = candidates?.shift();
+    if (!candidates || candidates.length === 0) continue;
+    // Take the first candidate the confirmer accepts, and remove only that one, so an
+    // unconfirmed candidate stays available for a different baseline file that git does
+    // attest to.
+    const index = candidates.findIndex((candidate) => confirm(from, candidate));
+    if (index === -1) continue;
+    const to = candidates.splice(index, 1)[0];
     if (to === undefined) continue;
     renames.push({ from, to, errors: rows.reduce((sum, row) => sum + row.count, 0) });
   }
@@ -128,11 +147,23 @@ function compareFixed(a: DebtChange, b: DebtChange): number {
 export function diffAgainstBaseline(
   baseline: Baseline,
   current: SignatureCounts,
-  options: { readonly fileExists?: FileExists; readonly detectRenames?: boolean } = {},
+  options: {
+    readonly fileExists?: FileExists;
+    readonly detectRenames?: boolean;
+    /** Positive evidence a rename happened. Defaults to confirming nothing. */
+    readonly confirmRename?: (from: string, to: string) => boolean;
+  } = {},
 ): RatchetDiff {
-  const fileExists = options.fileExists ?? ((relativePath) => existsSync(path.resolve(relativePath)));
+  // No default that silently resolves against process.cwd(). A caller whose process cwd
+  // differs from the project root would see every baseline path as vanished, turning the
+  // whole baseline into rename candidates. Make the dependency explicit instead.
+  const fileExists =
+    options.fileExists ??
+    ((relativePath: string) => existsSync(path.resolve(process.cwd(), relativePath)));
   const renames =
-    options.detectRenames === false ? [] : detectRenames(baseline, current, fileExists);
+    options.detectRenames === false
+      ? []
+      : detectRenames(baseline, current, fileExists, options.confirmRename);
   const remapped = applyRenames(baseline, renames);
 
   const baselineByHash = new Map<string, BaselineEntry>();

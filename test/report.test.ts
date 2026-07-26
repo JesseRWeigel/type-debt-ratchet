@@ -19,6 +19,9 @@ const BASE = [
 function diffFor(before: readonly string[], after: readonly string[]): RatchetDiff {
   return diffAgainstBaseline(buildBaseline(counts(before), "loose"), counts(after), {
     fileExists: () => true,
+    // These tests exercise rename pairing and reporting. Opt into the fingerprint
+    // strategy explicitly, because the shipped default confirms nothing without git.
+    confirmRename: () => true,
   });
 }
 
@@ -76,7 +79,7 @@ test("renames are called out explicitly", () => {
       BASE[0] as string,
       "src/lib/b.ts(7,32): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.",
     ]),
-    { fileExists: (file) => file !== "src/b.ts" },
+    { fileExists: (file) => file !== "src/b.ts", confirmRename: () => true },
   );
   const body = renderComment(diff, options);
   assert.match(body, /#### Renamed files/);

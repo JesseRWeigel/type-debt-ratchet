@@ -24,6 +24,9 @@ Options:
   --auto-shrink            Record fixed errors in the baseline. Never absorbs new ones.
   --fail-on-stale          Also fail when the baseline lists errors that no longer occur
   --no-rename-detection    Treat a moved file's errors as new debt
+  --rename-strategy <s>    git (default) confirms renames with git. fingerprint
+                           trusts matching error shapes, which can absorb a new
+                           file's new errors. Use only where git is unavailable.
   --allow-empty-result     Accept a checker run that produced zero diagnostics
                            against a non-empty baseline (default: treat as broken)
   --format <fmt>           text (default), json, or markdown
@@ -61,6 +64,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   let failOnStale = false;
   let detectRenames = true;
   let allowEmptyResult = false;
+  let renameStrategy: "git" | "fingerprint" = "git";
   let format: "text" | "json" | "markdown" = "text";
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -105,6 +109,14 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       case "--fail-on-stale":
         failOnStale = true;
         break;
+      case "--rename-strategy": {
+        const value = argv[++i];
+        if (value !== "git" && value !== "fingerprint") {
+          throw new Error(`--rename-strategy must be "git" or "fingerprint", got ${JSON.stringify(value)}`);
+        }
+        renameStrategy = value;
+        break;
+      }
       case "--allow-empty-result":
         allowEmptyResult = true;
         break;
@@ -131,6 +143,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       failOnStale,
       detectRenames,
       allowEmptyResult,
+      renameStrategy,
     },
     format,
   };

@@ -9,6 +9,10 @@ node_modules/
 __pycache__/
 *.pyc
 .venv/
-dist/
+# dist/ IS committed on purpose. action.yml points at dist/action.js, and a GitHub
+# Action runner does no build step, so an unbuilt dist means every consumer of
+# JesseRWeigel/type-debt-ratchet@main gets "File not found: dist/action.js". Source maps
+# are excluded because they only bloat the checkout the runner clones.
+dist/**/*.map
 build/
 .next/

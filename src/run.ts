@@ -11,6 +11,7 @@ import { buildBaseline, emptyBaseline, readBaseline, writeBaseline } from "./bas
 import { diffAgainstBaseline, shrinkBaseline } from "./diff.ts";
 import { countSignatures, toSignature } from "./signature.ts";
 import { runCommand, runTypeCheck } from "./tsc.ts";
+import { gitConfirmer } from "./git.ts";
 import type { Baseline, RatchetDiff, SignatureMode } from "./types.ts";
 
 /** Exit codes. Distinguishing 1 from 2 lets a workflow tell debt from breakage. */
@@ -36,6 +37,13 @@ export interface RatchetOptions {
   readonly detectRenames: boolean;
   /** Accept a checker run that produced zero diagnostics against a non-empty baseline. */
   readonly allowEmptyResult?: boolean;
+  /**
+   * How a rename is confirmed. "git" asks git, which decides by content similarity
+   * and is the only real evidence available. "fingerprint" restores the old
+   * behavior of trusting matching error shapes, which can absorb a new file's new
+   * errors and is unsafe on a codebase with many identical error shapes.
+   */
+  readonly renameStrategy?: "git" | "fingerprint";
   readonly runner?: (command: string, cwd: string) => Promise<{ output: string; exitCode: number }>;
 }
 
@@ -63,6 +71,23 @@ export const DEFAULT_OPTIONS = {
  * rather than after a slow compile, and it is written only after a successful parse so a
  * crashed tsc can never blank out a project's recorded debt.
  */
+/**
+ * Build the rename confirmer for a run.
+ *
+ * Git is the default because it is the only source of actual evidence. When the project
+ * is not a git repository, git confirms nothing and renames are simply not detected,
+ * which reports a moved file's errors as new debt. That is the safe direction to fail:
+ * the user runs --update-baseline once, rather than the gate silently swallowing errors.
+ */
+function renameConfirmer(
+  cwd: string,
+  options: RatchetOptions,
+): (from: string, to: string) => boolean {
+  if (options.detectRenames === false) return () => false;
+  if (options.renameStrategy === "fingerprint") return () => true;
+  return gitConfirmer(cwd);
+}
+
 export async function runRatchet(options: RatchetOptions): Promise<RatchetResult> {
   const cwd = path.resolve(options.cwd);
   const baselinePath = path.resolve(cwd, options.baselinePath);
@@ -94,6 +119,7 @@ export async function runRatchet(options: RatchetOptions): Promise<RatchetResult
     const diff = diffAgainstBaseline(next, counts, {
       fileExists: (relative) => existsSync(path.resolve(cwd, relative)),
       detectRenames: options.detectRenames,
+      confirmRename: renameConfirmer(cwd, options),
     });
     return { exitCode: EXIT_OK, diff, baseline: next, baselineWritten: written, notes };
   }
@@ -134,6 +160,7 @@ export async function runRatchet(options: RatchetOptions): Promise<RatchetResult
   const diff = diffAgainstBaseline(existing, counts, {
     fileExists: (relative) => existsSync(path.resolve(cwd, relative)),
     detectRenames: options.detectRenames,
+    confirmRename: renameConfirmer(cwd, options),
   });
 
   let baseline = existing;
