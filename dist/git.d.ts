@@ -19,13 +19,11 @@ export interface GitRenameLookup {
     readonly available: boolean;
 }
 /**
- * Rename pairs across the working tree and the index, relative to HEAD.
- *
- * Both are consulted because a rename can be staged, unstaged, or a mix, and a CI checkout
- * of a pull request branch shows it as a committed change against the base. Callers that
- * need the committed-only view can diff against a merge base themselves and pass the
- * result in.
+ * Without a base, preserve the local HEAD/index workflow. With an explicit base,
+ * compare its merge base with HEAD to the current working tree, so a clean PR
+ * checkout includes committed renames and diverged branches are handled correctly.
+ * Missing history is an error, never silently treated as an empty rename map.
  */
-export declare function detectGitRenames(cwd: string): GitRenameLookup;
+export declare function detectGitRenames(cwd: string, baseRef?: string): GitRenameLookup;
 /** Build a confirmer for `detectRenames`. Unavailable git confirms nothing. */
-export declare function gitConfirmer(cwd: string): (from: string, to: string) => boolean;
+export declare function gitConfirmer(cwd: string, baseRef?: string): (from: string, to: string) => boolean;

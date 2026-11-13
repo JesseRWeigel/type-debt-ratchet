@@ -116,7 +116,7 @@ $ bash scripts/verify.sh
 VERIFY OK
 ```
 
-95 unit tests plus 20 behavioral checks against real fixture projects with real `tsc` errors.
+101 unit tests plus 20 behavioral checks against real fixture projects with real `tsc` errors.
 Several checks are negative controls: the renamed fixture is asserted to **fail** with
 `--no-rename-detection`, so the passing case proves rename handling is doing the work rather
 than the fixture simply having no errors.
@@ -139,3 +139,43 @@ TypeScript type stripping. The built `dist/` runs on Node 20.11 or newer with no
 ## License
 
 MIT.
+
+Verification on 2026-11-13: typecheck, build, all 101 tests and all 20 behavioral
+checks pass. The new tests include a clean committed rename in a real Git repo,
+diverged and shallow history, and the shipped CLI rejecting genuinely new debt.
+
+## Committed renames in pull requests
+
+Local runs without `--base-ref` inspect changes against HEAD and the index. To
+recognize a rename already committed on a clean PR checkout, explicitly pass the
+base branch or commit:
+
+```sh
+node dist/cli.js --base-ref origin/main
+```
+
+This uses `git merge-base <base-ref> HEAD`, then Git's content-similarity rename
+detection from that commit to the current working tree. A diverged base branch
+therefore does not contribute unrelated changes. Paths stay relative to `--cwd`;
+moves outside that directory are not carried over. Untracked destination files
+must be staged before Git can recognize them. No revision is guessed from CI
+environment variables. Missing revisions or shallow/unrelated history fail with
+exit 2 rather than silently losing rename evidence. This is not a substitute for
+reviewing baseline edits or signature normalization (see the limitations above).
+
+For the Action, fetch the base and history before invoking it:
+
+```yaml
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+- uses: JesseRWeigel/type-debt-ratchet@main
+  with:
+    base-ref: ${{ github.event.pull_request.base.sha }}
+```
+
+Use this in a pull-request workflow, with your normal dependency installation and
+checker setup. The explicit base must refer to the history represented by your
+baseline. Pin a reviewed commit for production rather than a moving branch.
+`base-ref` requires Git rename detection and cannot be combined with disabling
+rename detection or the fingerprint strategy.

@@ -40,6 +40,7 @@ export function optionsFromEnv(env) {
         baselinePath: input(env, "baseline") || DEFAULT_OPTIONS.baselinePath,
         command: input(env, "tsc-command") || DEFAULT_OPTIONS.command,
         signatureMode: signatureMode,
+        ...(input(env, "base-ref") ? { baseRef: input(env, "base-ref") } : {}),
         updateBaseline: booleanInput(env, "update-baseline", false),
         autoShrink: booleanInput(env, "auto-shrink", false),
         failOnStale: booleanInput(env, "fail-on-stale", false),
