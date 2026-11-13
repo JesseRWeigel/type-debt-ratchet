@@ -35,6 +35,8 @@ export interface RatchetOptions {
      * errors and is unsafe on a codebase with many identical error shapes.
      */
     readonly renameStrategy?: "git" | "fingerprint";
+    /** Git revision whose merge base with HEAD anchors committed rename detection. */
+    readonly baseRef?: string;
     readonly runner?: (command: string, cwd: string) => Promise<{
         output: string;
         exitCode: number;

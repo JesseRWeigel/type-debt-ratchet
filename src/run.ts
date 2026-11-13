@@ -44,6 +44,8 @@ export interface RatchetOptions {
    * errors and is unsafe on a codebase with many identical error shapes.
    */
   readonly renameStrategy?: "git" | "fingerprint";
+  /** Git revision whose merge base with HEAD anchors committed rename detection. */
+  readonly baseRef?: string;
   readonly runner?: (command: string, cwd: string) => Promise<{ output: string; exitCode: number }>;
 }
 
@@ -85,13 +87,17 @@ function renameConfirmer(
 ): (from: string, to: string) => boolean {
   if (options.detectRenames === false) return () => false;
   if (options.renameStrategy === "fingerprint") return () => true;
-  return gitConfirmer(cwd);
+  return gitConfirmer(cwd, options.baseRef);
 }
 
 export async function runRatchet(options: RatchetOptions): Promise<RatchetResult> {
   const cwd = path.resolve(options.cwd);
   const baselinePath = path.resolve(cwd, options.baselinePath);
   const notes: string[] = [];
+  if (options.baseRef && (options.detectRenames === false || options.renameStrategy === "fingerprint")) {
+    throw new Error("--base-ref requires Git rename detection; remove --no-rename-detection or --rename-strategy fingerprint.");
+  }
+  const confirmRename = renameConfirmer(cwd, options);
 
   const existing = await readBaseline(baselinePath);
 
@@ -119,7 +125,7 @@ export async function runRatchet(options: RatchetOptions): Promise<RatchetResult
     const diff = diffAgainstBaseline(next, counts, {
       fileExists: (relative) => existsSync(path.resolve(cwd, relative)),
       detectRenames: options.detectRenames,
-      confirmRename: renameConfirmer(cwd, options),
+      confirmRename,
     });
     return { exitCode: EXIT_OK, diff, baseline: next, baselineWritten: written, notes };
   }
@@ -160,7 +166,7 @@ export async function runRatchet(options: RatchetOptions): Promise<RatchetResult
   const diff = diffAgainstBaseline(existing, counts, {
     fileExists: (relative) => existsSync(path.resolve(cwd, relative)),
     detectRenames: options.detectRenames,
-    confirmRename: renameConfirmer(cwd, options),
+    confirmRename,
   });
 
   let baseline = existing;

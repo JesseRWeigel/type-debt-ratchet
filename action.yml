@@ -42,6 +42,9 @@ inputs:
     description: Also fail when the baseline lists errors that no longer occur.
     required: false
     default: "false"
+  base-ref:
+    description: Base revision for committed rename detection; requires fetched history. Compares its merge base with HEAD.
+    required: false
   rename-detection:
     description: Carry a file's baseline errors over when it is moved without being edited.
     required: false

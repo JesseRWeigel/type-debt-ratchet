@@ -55,25 +55,44 @@ function parseNameStatus(out: string, into: Map<string, string>): void {
 }
 
 /**
- * Rename pairs across the working tree and the index, relative to HEAD.
- *
- * Both are consulted because a rename can be staged, unstaged, or a mix, and a CI checkout
- * of a pull request branch shows it as a committed change against the base. Callers that
- * need the committed-only view can diff against a merge base themselves and pass the
- * result in.
+ * Without a base, preserve the local HEAD/index workflow. With an explicit base,
+ * compare its merge base with HEAD to the current working tree, so a clean PR
+ * checkout includes committed renames and diverged branches are handled correctly.
+ * Missing history is an error, never silently treated as an empty rename map.
  */
-export function detectGitRenames(cwd: string): GitRenameLookup {
+export function detectGitRenames(cwd: string, baseRef?: string): GitRenameLookup {
   const inside = git(cwd, ["rev-parse", "--is-inside-work-tree"]);
-  if (inside === null || inside.trim() !== "true") return EMPTY;
+  if (inside === null || inside.trim() !== "true") {
+    if (baseRef) throw new Error("--base-ref requires a Git working tree and available git executable.");
+    return EMPTY;
+  }
+
+  let mergeBase: string | null = null;
+  if (baseRef) {
+    const resolved = git(cwd, ["rev-parse", "--verify", "--end-of-options", `${baseRef}^{commit}`]);
+    if (resolved === null) {
+      throw new Error(`Cannot resolve base ref ${JSON.stringify(baseRef)}. Fetch the base revision/history (checkout fetch-depth: 0 in Actions).`);
+    }
+    mergeBase = git(cwd, ["merge-base", resolved.trim(), "HEAD"])?.trim() ?? null;
+    if (!mergeBase) {
+      throw new Error(`Cannot find a merge base for ${JSON.stringify(baseRef)} and HEAD. Fetch full history (checkout fetch-depth: 0); unrelated histories are unsupported.`);
+    }
+  }
 
   const pairs = new Map<string, string>();
   let sawAny = false;
-  for (const args of [
+  const commands = mergeBase ? [
+    ["diff", "--find-renames", "--name-status", "-z", "--relative", mergeBase, "--", "."],
+  ] : [
     ["diff", "--find-renames", "--name-status", "-z", "HEAD"],
     ["diff", "--find-renames", "--name-status", "-z", "--cached"],
-  ]) {
+  ];
+  for (const args of commands) {
     const out = git(cwd, args);
-    if (out === null) continue;
+    if (out === null) {
+      if (mergeBase) throw new Error("Git could not compare renames against the resolved base revision.");
+      continue;
+    }
     sawAny = true;
     parseNameStatus(out, pairs);
   }
@@ -86,8 +105,8 @@ export function detectGitRenames(cwd: string): GitRenameLookup {
 }
 
 /** Build a confirmer for `detectRenames`. Unavailable git confirms nothing. */
-export function gitConfirmer(cwd: string): (from: string, to: string) => boolean {
-  const lookup = detectGitRenames(cwd);
+export function gitConfirmer(cwd: string, baseRef?: string): (from: string, to: string) => boolean {
+  const lookup = detectGitRenames(cwd, baseRef);
   if (!lookup.available) return () => false;
   return (from, to) => lookup.pairs.get(from) === to;
 }

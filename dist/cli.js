@@ -20,6 +20,7 @@ Options:
   --update-baseline        Rewrite the baseline from this run and exit 0
   --auto-shrink            Record fixed errors in the baseline. Never absorbs new ones.
   --fail-on-stale          Also fail when the baseline lists errors that no longer occur
+  --base-ref <revision>    Detect committed renames from merge-base(revision, HEAD).
   --no-rename-detection    Treat a moved file's errors as new debt
   --rename-strategy <s>    git (default) confirms renames with git. fingerprint
                            trusts matching error shapes, which can absorb a new
@@ -55,10 +56,15 @@ export function parseArgs(argv) {
     let detectRenames = true;
     let allowEmptyResult = false;
     let renameStrategy = "git";
+    let baseRef;
     let format = "text";
     for (let i = 0; i < argv.length; i += 1) {
         const arg = argv[i];
         switch (arg) {
+            case "--base-ref":
+                baseRef = requireValue(argv, i, arg);
+                i += 1;
+                break;
             case "--baseline":
                 baselinePath = requireValue(argv, i, arg);
                 i += 1;
@@ -131,6 +137,7 @@ export function parseArgs(argv) {
             detectRenames,
             allowEmptyResult,
             renameStrategy,
+            ...(baseRef ? { baseRef } : {}),
         },
         format,
     };

@@ -40,12 +40,16 @@ function renameConfirmer(cwd, options) {
         return () => false;
     if (options.renameStrategy === "fingerprint")
         return () => true;
-    return gitConfirmer(cwd);
+    return gitConfirmer(cwd, options.baseRef);
 }
 export async function runRatchet(options) {
     const cwd = path.resolve(options.cwd);
     const baselinePath = path.resolve(cwd, options.baselinePath);
     const notes = [];
+    if (options.baseRef && (options.detectRenames === false || options.renameStrategy === "fingerprint")) {
+        throw new Error("--base-ref requires Git rename detection; remove --no-rename-detection or --rename-strategy fingerprint.");
+    }
+    const confirmRename = renameConfirmer(cwd, options);
     const existing = await readBaseline(baselinePath);
     if (existing !== null && existing.signatureMode !== options.signatureMode && !options.updateBaseline) {
         throw new Error(`${options.baselinePath} was written in "${existing.signatureMode}" signature mode but this run ` +
@@ -65,7 +69,7 @@ export async function runRatchet(options) {
         const diff = diffAgainstBaseline(next, counts, {
             fileExists: (relative) => existsSync(path.resolve(cwd, relative)),
             detectRenames: options.detectRenames,
-            confirmRename: renameConfirmer(cwd, options),
+            confirmRename,
         });
         return { exitCode: EXIT_OK, diff, baseline: next, baselineWritten: written, notes };
     }
@@ -97,7 +101,7 @@ export async function runRatchet(options) {
     const diff = diffAgainstBaseline(existing, counts, {
         fileExists: (relative) => existsSync(path.resolve(cwd, relative)),
         detectRenames: options.detectRenames,
-        confirmRename: renameConfirmer(cwd, options),
+        confirmRename,
     });
     let baseline = existing;
     let baselineWritten = false;
