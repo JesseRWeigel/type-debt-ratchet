@@ -121,4 +121,30 @@ export function renderTerminal(diff, options) {
     }
     return lines.join("\n");
 }
+/** A review report is not a ratchet run or a CI verdict. */
+export function renderBaselineReview(review, markdown = false) {
+    const lines = [
+        markdown ? "### Saved baseline review" : "Saved baseline review",
+        "",
+        `mode ${review.mode}  previous ${review.previous}  current ${review.current}  matched ${review.matched}  added ${review.added}  removed ${review.removed}`,
+    ];
+    for (const [title, changes] of [
+        ["Added baseline debt", review.additions],
+        ["Removed baseline debt", review.removals],
+    ]) {
+        if (changes.length === 0)
+            continue;
+        lines.push("", markdown ? `#### ${title}` : `${title}:`, "");
+        for (const change of changes.slice(0, MAX_ROWS)) {
+            const detail = `${change.file || "(project)"} ${change.code} ${truncate(change.message, 100)}`;
+            // Keep file/message text inert in Markdown and remove terminal controls.
+            const oneLine = detail.replace(/[\x00-\x1f\x7f]/g, " ");
+            const escaped = markdown ? oneLine.replace(/[&<>`@]/g, (character) => `&#${character.charCodeAt(0)};`) : oneLine;
+            lines.push(markdown ? `- ${signed(change.delta)} <code>${escaped}</code>` : `  ${signed(change.delta)}  ${escaped}`);
+        }
+        if (changes.length > MAX_ROWS)
+            lines.push(`  ... ${changes.length - MAX_ROWS} more`);
+    }
+    return lines.join("\n");
+}
 //# sourceMappingURL=report.js.map
