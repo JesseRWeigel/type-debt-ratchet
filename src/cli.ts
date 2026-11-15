@@ -1,22 +1,27 @@
 #!/usr/bin/env node
 /** Command-line entry point. Works standalone, with no GitHub involved. */
 
+import path from "node:path";
 import process from "node:process";
-import { BaselineError } from "./baseline.ts";
+import { BaselineError, readBaseline } from "./baseline.ts";
+import { diffAgainstBaseline } from "./diff.ts";
 import { isEntryPoint } from "./entrypoint.ts";
-import { renderComment, renderTerminal } from "./report.ts";
+import { renderBaselineReview, renderComment, renderTerminal } from "./report.ts";
 import { DEFAULT_OPTIONS, EXIT_NEW_DEBT, EXIT_USAGE, runRatchet, type RatchetOptions } from "./run.ts";
+import { hashSignature } from "./signature.ts";
 import { TscRunError } from "./tsc.ts";
-import type { SignatureMode } from "./types.ts";
+import type { Baseline, SignatureMode } from "./types.ts";
 
 const USAGE = `type-debt-ratchet - fail CI only on NEW tsc errors
 
 Usage:
   type-debt-ratchet [options]
   type-debt-ratchet --update-baseline [options]
+  type-debt-ratchet --compare-baseline <previous> [--baseline <current>] [options]
 
 Options:
   --baseline <path>        Baseline file. Default: ${DEFAULT_OPTIONS.baselinePath}
+  --compare-baseline <p>   Read-only diff from previous snapshot p to --baseline; no tsc
   --command <shell>        Type-check command. Default: ${DEFAULT_OPTIONS.command}
   --cwd <path>             Directory to run in. Default: the current directory
   --signature-mode <mode>  loose (default) or exact. See the README.
@@ -34,14 +39,15 @@ Options:
   -h, --help               Show this message
 
 Exit codes:
-  0  no new errors
+  0  no new errors, or saved-baseline review completed
   1  new errors, or --fail-on-stale with a stale baseline
-  2  bad usage, unreadable baseline, or a type-check command that did not run
+  2  bad usage, invalid or incomparable baselines, or a failed type-check command
 `;
 
 interface ParsedArgs {
   readonly options: RatchetOptions;
   readonly format: "text" | "json" | "markdown";
+  readonly compareBaseline?: string;
 }
 
 /** Raised for anything the user can fix by changing the command line. */
@@ -56,6 +62,7 @@ function requireValue(argv: readonly string[], index: number, flag: string): str
 }
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
+  let compareBaseline: string | undefined;
   let baselinePath: string = DEFAULT_OPTIONS.baselinePath;
   let command: string = DEFAULT_OPTIONS.command;
   let cwd = process.cwd();
@@ -72,6 +79,10 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] as string;
     switch (arg) {
+      case "--compare-baseline":
+        compareBaseline = requireValue(argv, i, arg);
+        i += 1;
+        break;
       case "--base-ref":
         baseRef = requireValue(argv, i, arg);
         i += 1;
@@ -134,11 +145,22 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     }
   }
 
+  if (compareBaseline !== undefined) {
+    const supported = new Set(["--compare-baseline", "--baseline", "--cwd", "--format"]);
+    for (let i = 0; i < argv.length; i += 2) {
+      const flag = argv[i] as string;
+      if (!supported.has(flag)) {
+        throw new UsageError(`${flag} does not apply when comparing saved baselines.`);
+      }
+    }
+  }
+
   if (updateBaseline && autoShrink) {
     throw new UsageError("--update-baseline already rewrites the baseline, drop --auto-shrink");
   }
 
   return {
+    ...(compareBaseline !== undefined ? { compareBaseline } : {}),
     options: {
       cwd,
       baselinePath,
@@ -153,6 +175,45 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       ...(baseRef ? { baseRef } : {}),
     },
     format,
+  };
+}
+
+/** Compare stored counts, not source diagnostics. Never use rename inference here. */
+async function compareSavedBaselines(cwd: string, previousPath: string, currentPath: string) {
+  async function load(file: string): Promise<Baseline> {
+    const baseline = await readBaseline(path.resolve(cwd, file));
+    if (baseline === null) throw new BaselineError(`No baseline at ${file}`);
+    const seen = new Set<string>();
+    for (const entry of baseline.entries) {
+      if (entry.hash !== hashSignature(entry.file, entry.code, entry.message) || seen.has(entry.hash)) {
+        throw new BaselineError(`${file} contains an invalid or duplicate signature hash: ${entry.hash}`);
+      }
+      seen.add(entry.hash);
+    }
+    return baseline;
+  }
+
+  const previous = await load(previousPath);
+  const current = await load(currentPath);
+  if (previous.signatureMode !== current.signatureMode) {
+    throw new BaselineError(
+      `Cannot compare ${previous.signatureMode} and ${current.signatureMode} baselines. ` +
+        "Review this signature-mode migration with a raw Git diff.",
+    );
+  }
+  const counts = new Map(current.entries.map((entry) => [
+    entry.hash, { signature: entry, count: entry.count },
+  ]));
+  const diff = diffAgainstBaseline(previous, counts, { detectRenames: false });
+  return {
+    mode: current.signatureMode,
+    previous: diff.baselineTotal,
+    current: diff.currentTotal,
+    matched: diff.currentTotal - diff.newErrorCount,
+    added: diff.newErrorCount,
+    removed: diff.fixedErrorCount,
+    additions: diff.added,
+    removals: diff.fixed,
   };
 }
 
@@ -171,6 +232,16 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
 
   try {
+    if (parsed.compareBaseline !== undefined) {
+      const review = await compareSavedBaselines(
+        parsed.options.cwd, parsed.compareBaseline, parsed.options.baselinePath,
+      );
+      const output = parsed.format === "json"
+        ? JSON.stringify(review, null, 2)
+        : renderBaselineReview(review, parsed.format === "markdown");
+      process.stdout.write(`${output}\n`);
+      return 0;
+    }
     const result = await runRatchet(parsed.options);
     for (const note of result.notes) process.stderr.write(`${note}\n`);
 

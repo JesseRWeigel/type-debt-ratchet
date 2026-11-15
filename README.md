@@ -45,6 +45,7 @@ npx type-debt-ratchet                       # fails only on errors added since
 | Flag | Effect |
 |---|---|
 | `--baseline <path>` | Baseline file. Default `type-debt.json` |
+| `--compare-baseline <previous>` | Read-only review of a saved baseline against `--baseline`; no type check |
 | `--command <shell>` | Type-check command. Default `npx tsc --noEmit --pretty false` |
 | `--signature-mode loose\|exact` | How much of the message is normalized |
 | `--update-baseline` | Rewrite the baseline from this run and exit 0 |
@@ -57,6 +58,36 @@ npx type-debt-ratchet                       # fails only on errors added since
 
 Exit codes: `0` no new errors, `1` new errors (or a stale baseline under `--fail-on-stale`),
 `2` bad usage or a type-check command that did not run properly.
+
+## Review baseline changes separately from the ratchet
+
+A normal run compares diagnostics to the baseline in the checkout. If a pull request
+regenerates that baseline, that gate alone cannot show what the PR newly recorded.
+Compare the base branch's committed file with the PR's version in a separate review step:
+
+```bash
+# Fetch the intended base ref first. In CI, use the trusted base SHA/ref for this PR.
+previous="$(mktemp)"
+trap 'rm -f "$previous"' EXIT
+git show origin/main:type-debt.json > "$previous" || exit 2
+# Use a reviewed version of the CLI that includes --compare-baseline.
+type-debt-ratchet --compare-baseline "$previous" --baseline type-debt.json
+```
+
+The review reports previous/current totals, matched counts, additions and removals even
+when the total is unchanged. Use `--format json` for all changed rows or `--format markdown`
+for a compact job summary. Exit 0 means the files could be compared, **not** that an
+increase was approved; exit 2 means the snapshots could not be compared. Run the ordinary
+ratchet separately. This command never runs tsc or writes either file. It requires two
+valid snapshots in the same signature mode; review a mode migration with a raw Git diff.
+
+Matches are counts of identical stored file/code/message signatures, not identified source
+locations. Line insertions alone do not invalidate signatures. Loose mode can collapse
+different diagnostics in the same file to the same shape; even exact mode can miss a
+replacement with identical diagnostic text and count. Neither mode can reconstruct
+information absent from a saved snapshot. A path change appears as removal plus addition in
+this literal snapshot review. The ordinary ratchet can carry a committed rename forward
+when `--base-ref` confirms the move.
 
 ## Two failure modes it deliberately refuses
 
